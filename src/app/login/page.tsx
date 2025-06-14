@@ -10,16 +10,39 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const router = useRouter();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Dummy check: Only allow Master Admin
-    if (email === "master@admin.com" && password === "password123") {
-      localStorage.setItem("role", "Master Admin");
+    setError("");
+    setLoading(true);
+    try {
+      const response = await fetch("http://localhost:8081/api/masteradmins/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ email, password }).toString(),
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        setError(errorText || "Invalid credentials");
+        setLoading(false);
+        return;
+      }
+      const data = await response.json();
+      // Optionally store role or user info
+      localStorage.setItem("role", data.role || "Master Admin");
+      localStorage.setItem("user", JSON.stringify(data));
+      localStorage.setItem("masterAdminId", data.id || data.masterAdminId || data._id || "");
       router.push("/dashboard");
-    } else {
-      setError("Invalid credentials or not Master Admin");
+    } catch (err: any) {
+      setError("Login failed. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
+
 
   return (
     <div className="min-h-screen flex flex-col justify-center items-center bg-gray-100 dark:bg-gray-900">

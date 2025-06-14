@@ -16,13 +16,13 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     setMounted(true);
     if (
       storedRole !== "Master Admin" &&
-      !["/login", "/forgot-password"].includes(pathname)
+      !["/login", "/forgot-password", "/vendor-onboard-form"].includes(pathname)
     ) {
       router.replace("/login");
     }
   }, [pathname, router]);
 
-  const isAuthPage = ["/login", "/forgot-password"].includes(pathname);
+  const isAuthPage = ["/login", "/forgot-password", "/vendor-onboard-form"].includes(pathname);
 
   if (!mounted) return <div className="w-full h-screen flex items-center justify-center">Loading...</div>;
 

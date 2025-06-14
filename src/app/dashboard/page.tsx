@@ -1,7 +1,9 @@
 "use client";
 
-import { getVendorsFromStorage } from '../utils/vendorStorage';
-import { useEffect, useState } from 'react';
+import { useVendors } from '../context/VendorContext';
+import { getVendorStats } from './vendorStatsUtil';
+import { useMemo } from 'react';
+import AnimatedCounter from './AnimatedCounter';
 import { Pie } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 ChartJS.register(ArcElement, Tooltip, Legend);
@@ -11,22 +13,18 @@ import { useTheme } from '../utils/ThemeContext';
 import { FaUsers } from 'react-icons/fa';
 
 export default function DashboardPage() {
-  const [vendorStats, setVendorStats] = useState({ total: 0, active: 0, inactive: 0 });
-  const { isDark, toggleTheme } = useTheme();
+  const { vendors, loading } = useVendors();
+  const { isDark } = useTheme();
 
-  useEffect(() => {
-    function updateStats() {
-      const vendors = getVendorsFromStorage();
-      setVendorStats({
-        total: vendors.length,
-        active: vendors.filter((v: any) => v.status === 'Active').length,
-        inactive: vendors.filter((v: any) => v.status === 'Inactive').length,
-      });
-    }
-    updateStats();
-    window.addEventListener('storage', updateStats);
-    return () => window.removeEventListener('storage', updateStats);
-  }, []);
+  const vendorStats = useMemo(() => getVendorStats(vendors), [vendors]);
+
+  if (loading) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center ${isDark ? 'bg-slate-900' : 'bg-gray-100'}`}>
+        <div className="text-xl font-semibold">Loading Dashboard...</div>
+      </div>
+    );
+  }
 
   return (
     <div className={`min-h-screen py-6 px-2 md:px-8 transition-colors duration-300 ${isDark ? 'bg-slate-900 text-white' : 'bg-gray-100 text-gray-900'}`}>
@@ -39,17 +37,17 @@ export default function DashboardPage() {
         <div className={`rounded-lg shadow-md p-6 flex flex-col items-center ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-white text-black'}`}>
           <span className="text-4xl mb-2"><FaUsers /></span>
           <div className="text-lg font-semibold mb-1">Total Vendors</div>
-          <div className="text-3xl font-bold">{vendorStats.total}</div>
+                    <AnimatedCounter value={vendorStats.total} />
         </div>
         <div className={`rounded-lg shadow-md p-6 flex flex-col items-center ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-white text-black'}`}>
           <span className="text-4xl mb-2">✅</span>
           <div className="text-lg font-semibold mb-1">Active Vendors</div>
-          <div className="text-3xl font-bold">{vendorStats.active}</div>
+                    <AnimatedCounter value={vendorStats.active} />
         </div>
         <div className={`rounded-lg shadow-md p-6 flex flex-col items-center ${isDark ? 'bg-slate-800 text-red-300' : 'bg-white text-black'}`}>
           <span className="text-4xl mb-2">⛔</span>
           <div className="text-lg font-semibold mb-1">Inactive Vendors</div>
-          <div className="text-3xl font-bold">{vendorStats.inactive}</div>
+                    <AnimatedCounter value={vendorStats.inactive} />
         </div>
       </div>
       {/* Modern Animated Pie Chart */}
@@ -110,8 +108,9 @@ export default function DashboardPage() {
                   callbacks: {
                     label: (context) => {
                       const label = context.label || '';
-                      const value = context.raw || 0;
-                      const total = context.dataset.data.reduce((acc, curr) => acc + curr, 0);
+                      const value = Number(context.raw) || 0;
+                      const dataArr = Array.isArray(context.dataset.data) ? context.dataset.data : [];
+                      const total = dataArr.reduce((acc: number, curr: any) => acc + Number(curr), 0);
                       const percentage = total ? Math.round((value / total) * 100) : 0;
                       return `${label}: ${value} (${percentage}%)`;
                     },

@@ -1,4 +1,4 @@
-export const DUMMY_VENDORS = [
+// File no longer needed
   {
     id: 1,
     vendorCompanyName: "John Doe Pvt Ltd",

@@ -1,10 +1,16 @@
 "use client";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useTheme } from "../app/utils/ThemeContext";
 import { FaSun, FaMoon } from "react-icons/fa";
 import { useState, useEffect } from "react";
 import ProfileDrawer from "./ProfileDrawer";
+
+// Define the structure for the user object
+interface User {
+  fullName: string;
+  profileImg: string | null;
+}
 
 const NAV_LINKS = [
   { label: "Dashboard", href: "/dashboard" },
@@ -16,40 +22,41 @@ const NAV_LINKS = [
 export default function Navbar() {
   const pathname = usePathname();
   const { isDark, toggleTheme } = useTheme();
-  const router = useRouter();
 
-  // Profile state
-  const [profile, setProfile] = useState({
-    name: "Master Admin",
-    email: "admin@email.com",
-    image: "",
-  });
+  const [user, setUser] = useState<User | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // Load profile from localStorage
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("profile");
-      if (stored) setProfile(JSON.parse(stored));
+  // Function to load user data from localStorage
+  const loadUserData = () => {
+    const userDataString = localStorage.getItem('user');
+    if (userDataString) {
+      setUser(JSON.parse(userDataString));
     }
+  };
+
+  // Load user data on initial mount and listen for updates
+  useEffect(() => {
+    loadUserData();
+
+    const handleUserUpdate = () => loadUserData();
+    window.addEventListener('userUpdated', handleUserUpdate);
+
+    // Cleanup the event listener when the component unmounts
+    return () => {
+      window.removeEventListener('userUpdated', handleUserUpdate);
+    };
   }, []);
 
-  // Save profile to localStorage
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("profile", JSON.stringify(profile));
-    }
-  }, [profile]);
-
-  const handleEditProfile = (data: typeof profile) => {
-    setProfile(data);
+  const handleDrawerClose = () => {
     setDrawerOpen(false);
+    // Reload data on close to reflect any profile updates
+    loadUserData();
   };
-
-  const handleLogout = () => {
-    localStorage.removeItem("role");
-    router.push("/login");
-  };
+  
+  // Hide Navbar on public routes
+  if (['/login', '/forgot-password', '/vendor-onboard-form'].includes(pathname)) {
+    return null;
+  }
 
   return (
     <nav className={`w-full z-40 sticky top-0 shadow-md transition-colors duration-200 ${isDark ? 'bg-slate-900 border-b border-slate-800 mb-[1px]' : 'bg-white border-b border-gray-100'}`}>
@@ -81,25 +88,24 @@ export default function Navbar() {
               {isDark ? <FaSun className="text-lg" /> : <FaMoon className="text-lg" />}
             </button>
             {/* Profile Avatar */}
-            <button
-              className="ml-2 flex items-center focus:outline-none"
-              onClick={() => setDrawerOpen(true)}
-              title="Profile"
-            >
-              {profile.image ? (
-                <img src={profile.image} alt="Profile" className="w-8 h-8 rounded-full border-2 border-blue-400 object-cover" />
-              ) : (
-                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center font-bold text-base text-blue-700 border border-blue-200">
-                  {profile.name?.[0]?.toUpperCase() || 'A'}
-                </div>
-              )}
-            </button>
+            {user && (
+              <button
+                className="ml-2 flex items-center focus:outline-none"
+                onClick={() => setDrawerOpen(true)}
+                title="Profile"
+              >
+                {user.profileImg ? (
+                  <img src={`http://localhost:8081${user.profileImg}`} alt="Profile" className="w-8 h-8 rounded-full border-2 border-blue-400 object-cover" />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center font-bold text-base text-blue-700 border border-blue-200">
+                    {user.fullName?.[0]?.toUpperCase() || 'A'}
+                  </div>
+                )}
+              </button>
+            )}
             <ProfileDrawer
               open={drawerOpen}
-              profile={profile}
-              onClose={() => setDrawerOpen(false)}
-              onLogout={handleLogout}
-              onEdit={handleEditProfile}
+              onClose={handleDrawerClose}
             />
           </div>
         </div>

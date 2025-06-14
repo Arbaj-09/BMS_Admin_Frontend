@@ -1,13 +1,20 @@
 "use client";
-import React, { useState, useEffect } from 'react';
-import { getVendorsFromStorage, setVendorsToStorage } from '../utils/vendorStorage';
+import React, { useState } from 'react';
+import { useVendors } from '../context/VendorContext';
+// Removed vendorStorage imports
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { PencilSquareIcon, TrashIcon, EnvelopeIcon } from "@heroicons/react/24/outline";
 import { useTheme } from '../utils/ThemeContext';
 import { FaMoon, FaSun } from 'react-icons/fa';
 
-import { DUMMY_VENDORS } from './dummyVendors';
+// Helper to prefix backend URL for /uploads paths
+const getImageUrl = (url: string) =>
+  url && url.startsWith('/uploads')
+    ? `http://localhost:8081${url}`
+    : url;
+
+// Removed DUMMY_VENDORS import
 
 
 
@@ -16,8 +23,23 @@ export default function OnboardVendorPage() {
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [editVendorId, setEditVendorId] = useState<number | null>(null);
-  // Load vendors from localStorage if present, else use DUMMY_VENDORS
-  const [vendors, setVendors] = useState(getVendorsFromStorage());
+    // Vendors state will be loaded from backend
+  const { vendors, loading, error: apiError, fetchVendors } = useVendors();
+
+  // Debug: Log vendors for current master admin from backend
+  React.useEffect(() => {
+    const masterAdminId = getMasterAdminId();
+    if (!masterAdminId) return;
+    fetch(`http://localhost:8081/api/masteradmins/${masterAdminId}/vendors`)
+      .then(res => res.json())
+      .then(data => {
+        console.log('Vendors for masterAdminId', masterAdminId, ':', data);
+      })
+      .catch(err => {
+        console.error('Error fetching vendors for masterAdminId', masterAdminId, err);
+      });
+  }, []);
+
   const [confirmModal, setConfirmModal] = useState<null | { type: 'delete' | 'email', vendor: any }>(null);
   const [form, setForm] = useState<any>({
     vendorFullName: "",
@@ -56,53 +78,108 @@ export default function OnboardVendorPage() {
        v.vendorEmail?.toLowerCase().includes(search.toLowerCase()))
   );
 
-  const handleAddOrEditVendor = (e: React.FormEvent) => {
-    e.preventDefault();
-    let updated;
-    if (editVendorId !== null) {
-      updated = vendors.map(v => v.id === editVendorId ? { ...v, ...form } : v);
-      setVendors(updated);
-      toast.success('Updated successfully!');
-    } else {
-      updated = [...vendors, { id: vendors.length + 1, ...form }];
-      setVendors(updated);
-      toast.success('Added successfully!');
+  // Get Master Admin ID from localStorage
+  const getMasterAdminId = () => {
+    if (typeof window !== 'undefined') {
+      const user = localStorage.getItem('user');
+      if (user) {
+        try {
+          const parsed = JSON.parse(user);
+          return parsed.id || parsed.masterAdminId || parsed._id;
+        } catch {}
+      }
     }
-    setVendorsToStorage(updated);
-    setForm({
-      vendorCompanyName: "",
-      contactNo: "",
-      alternateMobileNo: "",
-      city: "",
-      vendorEmail: "",
-      bankName: "",
-      bankAccountNo: "",
-      ifscCode: "",
-      aadharNo: "",
-      panNo: "",
-      udyogAadharNo: "",
-      govtApprovalCertificate: null,
-      vendorDocs: null,
-      vendorImage: null,
-      aadharPhoto: null,
-      panPhoto: null,
-      vendorOtherDetails: "",
-      govtApprovalCertificateUrl: "",
-      vendorDocsUrl: "",
-      vendorImageUrl: "",
-      aadharPhotoUrl: "",
-      panPhotoUrl: "",
-      status: "Active"
+    return null;
+  };
+
+  // Vendor fetching is now handled by VendorContext.
+
+  // Add or edit vendor (edit not implemented in backend, so only add is supported)
+  const handleAddOrEditVendor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const masterAdminId = getMasterAdminId();
+    if (!masterAdminId) {
+      toast.error("Master Admin not authenticated.");
+      return;
+    }
+    // Prepare FormData for multipart/form-data
+    const formData = new FormData();
+    Object.entries(form).forEach(([key, value]) => {
+      if (value !== null && value !== undefined) {
+        formData.append(key, value as string | Blob);
+      }
     });
-    setEditVendorId(null);
-    setShowModal(false);
+
+    const toastId = toast.loading(editVendorId ? 'Updating vendor...' : 'Adding vendor...');
+
+    try {
+      let response;
+      if (editVendorId !== null) {
+        // EDIT vendor
+        response = await fetch(
+          `http://localhost:8081/api/masteradmins/vendors/${masterAdminId}/${editVendorId}`,
+          {
+            method: "PUT",
+            body: formData,
+          }
+        );
+      } else {
+        // ADD vendor
+        response = await fetch(
+          `http://localhost:8081/api/masteradmins/vendors/${masterAdminId}`,
+          {
+            method: "POST",
+            body: formData,
+          }
+        );
+      }
+      const responseText = await response.text();
+      if (!response.ok) {
+        throw new Error(responseText || "Failed to save vendor");
+      }
+      await fetchVendors(); // Refresh vendors from context
+      toast.update(toastId, { render: editVendorId !== null ? "Vendor updated successfully!" : "Vendor added successfully!", type: 'success', isLoading: false, autoClose: 3000 });
+      setForm({
+        vendorFullName: "",
+        vendorCompanyName: "",
+        contactNo: "",
+        alternateMobileNo: "",
+        city: "",
+        vendorEmail: "",
+        bankName: "",
+        bankAccountNo: "",
+        ifscCode: "",
+        aadharNo: "",
+        panNo: "",
+        gstNo: "",
+        gstNoImage: null,
+        udyogAadharNo: "",
+        govtApprovalCertificate: null,
+        vendorDocs: null,
+        vendorImage: null,
+        aadharPhoto: null,
+        panPhoto: null,
+        vendorOtherDetails: "",
+        govtApprovalCertificateUrl: "",
+        vendorDocsUrl: "",
+        vendorImageUrl: "",
+        aadharPhotoUrl: "",
+        panPhotoUrl: "",
+        gstNoImageUrl: "",
+        status: "Active"
+      });
+      setEditVendorId(null);
+      setShowModal(false);
+    } catch (err: any) {
+      toast.update(toastId, { render: err.message || 'Failed to save vendor', type: 'error', isLoading: false, autoClose: 3000 });
+    }
   };
 
   // Helper to handle file/image changes
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, field: string, urlField: string) => {
     const file = e.target.files && e.target.files[0];
     if (file) {
-      setForm((prev: any) => ({
+      setForm((prev: typeof form) => ({
         ...prev,
         [field]: file,
         [urlField]: URL.createObjectURL(file)
@@ -178,17 +255,60 @@ export default function OnboardVendorPage() {
     setShowModal(true);
   };
 
-  const handleDeleteVendor = (id: number) => {
-    const updated = vendors.filter((v: any) => v.id !== id);
-    setVendors(updated);
-    setVendorsToStorage(updated);
-    setConfirmModal(null);
+  // DELETE vendor from backend and update UI
+  const handleDeleteVendor = async (id: number) => {
+    if (!id) return;
+    const masterAdminId = getMasterAdminId();
+    if (!masterAdminId) {
+      toast.error("Master Admin not authenticated.");
+      return;
+    }
+    const toastId = toast.loading('Deleting vendor...');
+    try {
+      const res = await fetch(`http://localhost:8081/api/masteradmins/vendors/${id}`, {
+        method: 'DELETE',
+        headers: { 'masteradminid': masterAdminId }
+      });
+      const responseText = await res.text();
+      if (!res.ok) {
+        throw new Error(responseText || 'Failed to delete vendor');
+      }
+      toast.update(toastId, { render: 'Vendor deleted successfully!', type: 'success', isLoading: false, autoClose: 3000 });
+      await fetchVendors(); // Refresh vendors from context
+    } catch (err: any) {
+      toast.update(toastId, { render: err.message || 'Failed to delete vendor', type: 'error', isLoading: false, autoClose: 3000 });
+    } finally {
+      setConfirmModal(null);
+    }
   };
 
-  const handleSendEmail = (vendor: any) => {
-    // Implement your email logic here
-    alert(`Details sent to ${vendor.vendorCompanyName} (${vendor.vendorEmail})`);
-    setConfirmModal(null);
+  const handleSendEmail = async (vendor: any) => {
+    const masterAdminId = getMasterAdminId();
+    if (!masterAdminId) {
+      toast.error("Master Admin not authenticated.");
+      return;
+    }
+
+    const toastId = toast.loading('Sending login details to vendor...');
+    try {
+      const response = await fetch(
+        `http://localhost:8081/api/masteradmins/vendors/send-login-details?email=${encodeURIComponent(vendor.vendorEmail)}&masteradminid=${masterAdminId}`,
+        { method: 'POST' }
+      );
+
+      const responseText = await response.text();
+
+      if (!response.ok) {
+        toast.update(toastId, { render: responseText || 'Failed to send login details', type: 'error', isLoading: false, autoClose: 3000 });
+        throw new Error(responseText || 'Failed to send login details');
+      }
+
+      toast.update(toastId, { render: 'Login details sent to vendor.', type: 'success', isLoading: false, autoClose: 3000 });
+    } catch (err: any) {
+      toast.update(toastId, { render: err.message || 'An unexpected error occurred', type: 'error', isLoading: false, autoClose: 3000 });
+    } finally {
+      setConfirmModal(null);
+    }
   };
 
   return (
@@ -312,77 +432,67 @@ export default function OnboardVendorPage() {
   />
   {form.gstNoImageUrl && (
     <div className="mt-2">
-      <a href={form.gstNoImageUrl} target="_blank" rel="noopener noreferrer">
-        <img src={form.gstNoImageUrl} alt="GST" className="h-16 w-16 object-cover border rounded cursor-pointer" />
+      <a href={getImageUrl(form.gstNoImageUrl)} target="_blank" rel="noopener noreferrer">
+        <img src={getImageUrl(form.gstNoImageUrl)} alt="GST" className="h-16 w-16 object-cover border rounded cursor-pointer" />
       </a>
     </div>
   )}
 </div>
-                <div>
-                  <label className={`block mb-1 text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Udyog Aadhar No</label>
-                  <input type="text" className={`w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-center ${isDark ? 'bg-slate-700 border-slate-600 text-white placeholder-gray-400' : 'bg-gray-100 text-black border-gray-300 placeholder-gray-500'} transition-colors`} value={form.udyogAadharNo} onChange={e => setForm((f: any) => ({ ...f, udyogAadharNo: e.target.value }))} />
-                </div>
-                <div>
-                  <label className={`block mb-1 text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Govt. Approval Certificate</label>
-                  <input type="file" accept="image/*,application/pdf" className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'bg-slate-700 border-slate-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-500'} transition-colors`} onChange={e => handleFileChange(e, 'govtApprovalCertificate', 'govtApprovalCertificateUrl')} />
-                  {form.govtApprovalCertificateUrl && (
-                    <div className="mt-2">
-                      <a href={form.govtApprovalCertificateUrl} target="_blank" rel="noopener noreferrer">
-                        <img src={form.govtApprovalCertificateUrl} alt="Govt Approval" className="h-16 w-16 object-cover border rounded cursor-pointer" />
-                      </a>
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className={`block mb-1 text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Vendor Docs</label>
-                  <input type="file" accept="image/*,application/pdf" className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'bg-slate-700 border-slate-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-500'} transition-colors`} onChange={e => handleFileChange(e, 'vendorDocs', 'vendorDocsUrl')} />
-                  {form.vendorDocsUrl && (
-                    <div className="mt-2">
-                      <a href={form.vendorDocsUrl} target="_blank" rel="noopener noreferrer">
-                        <img src={form.vendorDocsUrl} alt="Vendor Docs" className="h-16 w-16 object-cover border rounded cursor-pointer" />
-                      </a>
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className={`block mb-1 text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Vendor Image</label>
-                  <input type="file" accept="image/*" className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'bg-slate-700 border-slate-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-500'} transition-colors`} onChange={e => handleFileChange(e, 'vendorImage', 'vendorImageUrl')} />
-                  {form.vendorImageUrl && (
-                    <div className="mt-2">
-                      <a href={form.vendorImageUrl} target="_blank" rel="noopener noreferrer">
-                        <img src={form.vendorImageUrl} alt="Vendor" className="h-16 w-16 object-cover border rounded cursor-pointer" />
-                      </a>
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className={`block mb-1 text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Aadhar Photo</label>
-                  <input type="file" accept="image/*" className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'bg-slate-700 border-slate-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-500'} transition-colors`} onChange={e => handleFileChange(e, 'aadharPhoto', 'aadharPhotoUrl')} />
-                  {form.aadharPhotoUrl && (
-                    <div className="mt-2">
-                      <a href={form.aadharPhotoUrl} target="_blank" rel="noopener noreferrer">
-                        <img src={form.aadharPhotoUrl} alt="Aadhar" className="h-16 w-16 object-cover border rounded cursor-pointer" />
-                      </a>
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className={`block mb-1 text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>PAN Photo</label>
-                  <input type="file" accept="image/*" className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'bg-slate-700 border-slate-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-500'} transition-colors`} onChange={e => handleFileChange(e, 'panPhoto', 'panPhotoUrl')} />
-                  {form.panPhotoUrl && (
-                    <div className="mt-2">
-                      <a href={form.panPhotoUrl} target="_blank" rel="noopener noreferrer">
-                        <img src={form.panPhotoUrl} alt="PAN" className="h-16 w-16 object-cover border rounded cursor-pointer" />
-                      </a>
-                    </div>
-                  )}
-                </div>
-                <div className="md:col-span-2">
-                  <label className={`block mb-1 text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Other Details</label>
-                  <textarea className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center ${isDark ? 'bg-slate-700 border-slate-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-500'} transition-colors`} value={form.vendorOtherDetails} onChange={e => setForm((f: any) => ({ ...f, vendorOtherDetails: e.target.value }))} rows={2} />
-                </div>
-              </div>
-              <div className="flex gap-3 mt-6 justify-center">
+
+
+<div>
+  <label className={`block mb-1 text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Govt. Approval Certificate</label>
+  <input type="file" accept="image/*,application/pdf" className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'bg-slate-700 border-slate-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-500'} transition-colors`} onChange={e => handleFileChange(e, 'govtApprovalCertificate', 'govtApprovalCertificateUrl')} />
+  {form.govtApprovalCertificateUrl && (
+    <div className="mt-2">
+      <a href={getImageUrl(form.govtApprovalCertificateUrl)} target="_blank" rel="noopener noreferrer">
+        <img src={getImageUrl(form.govtApprovalCertificateUrl)} alt="Govt Approval" className="h-16 w-16 object-cover border rounded cursor-pointer" />
+      </a>
+    </div>
+  )}
+</div>
+
+<div>
+  <label className={`block mb-1 text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Vendor Image</label>
+  <input type="file" accept="image/*" className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'bg-slate-700 border-slate-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-500'} transition-colors`} onChange={e => handleFileChange(e, 'vendorImage', 'vendorImageUrl')} />
+  {form.vendorImageUrl && (
+    <div className="mt-2">
+      <a href={getImageUrl(form.vendorImageUrl)} target="_blank" rel="noopener noreferrer">
+        <img src={getImageUrl(form.vendorImageUrl)} alt="Vendor" className="h-16 w-16 object-cover border rounded cursor-pointer" />
+      </a>
+    </div>
+  )}
+</div>
+
+<div>
+  <label className={`block mb-1 text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Aadhar Photo</label>
+  <input type="file" accept="image/*" className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'bg-slate-700 border-slate-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-500'} transition-colors`} onChange={e => handleFileChange(e, 'aadharPhoto', 'aadharPhotoUrl')} />
+  {form.aadharPhotoUrl && (
+    <div className="mt-2">
+      <a href={getImageUrl(form.aadharPhotoUrl)} target="_blank" rel="noopener noreferrer">
+        <img src={getImageUrl(form.aadharPhotoUrl)} alt="Aadhar" className="h-16 w-16 object-cover border rounded cursor-pointer" />
+      </a>
+    </div>
+  )}
+</div>
+
+<div>
+  <label className={`block mb-1 text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>PAN Photo</label>
+  <input type="file" accept="image/*" className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'bg-slate-700 border-slate-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-500'} transition-colors`} onChange={e => handleFileChange(e, 'panPhoto', 'panPhotoUrl')} />
+  {form.panPhotoUrl && (
+    <div className="mt-2">
+      <a href={getImageUrl(form.panPhotoUrl)} target="_blank" rel="noopener noreferrer">
+        <img src={getImageUrl(form.panPhotoUrl)} alt="PAN" className="h-16 w-16 object-cover border rounded cursor-pointer" />
+      </a>
+    </div>
+  )}
+</div>
+
+<div className="md:col-span-2">
+  <label className={`block mb-1 text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Other Details</label>
+  <textarea className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center ${isDark ? 'bg-slate-700 border-slate-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-500'} transition-colors`} value={form.vendorOtherDetails} onChange={e => setForm((f: any) => ({ ...f, vendorOtherDetails: e.target.value }))} rows={2} />
+</div>
+
                 <button
                   type="submit"
                   className={`w-36 py-3 rounded-lg font-semibold shadow-lg hover:scale-105 transition-transform focus:outline-none focus:ring-2 focus:ring-blue-400 text-white text-base ${isDark ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-500 hover:bg-blue-600'}`}
